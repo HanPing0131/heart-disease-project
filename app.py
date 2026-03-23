@@ -1,112 +1,98 @@
 import streamlit as st
-import joblib
+import streamlit as st
 import pandas as pd
+import joblib
 import numpy as np
-import shap
-import matplotlib.pyplot as plt
 
-# --- 1. Load the Trained Pipeline ---
-@st.cache_resource # Use cache to load model only once
+# Set page layout and title
+st.set_page_config(page_title="CAD Risk Predictor", layout="wide")
+
+st.title("🩺 Heart Disease Prediction System (CAD)")
+st.write("This application uses a KNN model optimized for clinical screening.")
+
+# 1. Load the pre-trained KNN Pipeline
+@st.cache_resource
 def load_model():
-    return joblib.load('cad_final_model.pkl')
+    # Ensure you have run main.py first to generate this file
+    return joblib.load('heart_disease_knn_model.pkl')
 
-model_pipeline = load_model()
+try:
+    model = load_model()
+except:
+    st.error("Model file not found! Please run your training script (main.py) first.")
 
-# --- 2. App UI Header ---
-st.set_page_config(page_title="CAD Risk Advisor", layout="wide")
-st.title("🫀 CAD Clinical Decision Support System")
-st.markdown("""
-This tool uses a Machine Learning model (Random Forest) to estimate the risk of **Coronary Artery Disease (CAD)** based on clinical metrics. It also provides a **SHAP explanation** to show which factors influenced the prediction.
-""")
-
-# --- 3. Sidebar Inputs for Doctors ---
-st.sidebar.header("Patient Clinical Data")
+# 2. Sidebar for Patient Feature Input
+st.sidebar.header("Patient Clinical Features")
 
 def get_user_input():
-    # Numeric Inputs
-    age = st.sidebar.number_input("Age", 20, 100, 50)
-    trestbps = st.sidebar.number_input("Resting Blood Pressure (mm Hg)", 80, 200, 120)
-    chol = st.sidebar.number_input("Serum Cholesterol (mg/dl)", 100, 600, 200)
-    thalch = st.sidebar.number_input("Max Heart Rate Achieved", 60, 220, 150)
-    oldpeak = st.sidebar.number_input("ST Depression (Oldpeak)", 0.0, 6.0, 1.0, step=0.1)
-    ca = st.sidebar.selectbox("Major Vessels Colored by Flourosopy (ca)", [0.0, 1.0, 2.0, 3.0])
+    # Numerical Features
+    age = st.sidebar.slider('Age', 1, 100, 50)
+    trestbps = st.sidebar.slider('Resting Blood Pressure (mm Hg)', 80, 200, 120)
+    chol = st.sidebar.slider('Serum Cholesterol (mg/dl)', 100, 600, 240)
+    thalch = st.sidebar.slider('Max Heart Rate Achieved', 60, 220, 150)
+    oldpeak = st.sidebar.slider('ST Depression (Oldpeak)', 0.0, 6.0, 1.0)
+    
+    # Categorical Features
+    sex = st.sidebar.selectbox('Sex', ('Male', 'Female'))
+    cp = st.sidebar.selectbox('Chest Pain Type', ('typical angina', 'atypical angina', 'non-anginal', 'asymptomatic'))
+    fbs = st.sidebar.selectbox('Fasting Blood Sugar > 120 mg/dl', ('True', 'False'))
+    restecg = st.sidebar.selectbox('Resting ECG Results', ('normal', 'st-t abnormality', 'lv hypertrophy'))
+    exang = st.sidebar.selectbox('Exercise Induced Angina', ('Yes', 'No'))
+    slope = st.sidebar.selectbox('Slope of Peak Exercise ST', ('upsloping', 'flat', 'downsloping'))
+    thal = st.sidebar.selectbox('Thalassemia', ('normal', 'fixed defect', 'reversable defect'))
 
-    # Categorical Inputs
-    sex = st.sidebar.selectbox("Gender", ["Male", "Female"])
-    cp = st.sidebar.selectbox("Chest Pain Type (cp)", ["typical angina", "atypical angina", "non-anginal", "asymptomatic"])
-    fbs = st.sidebar.selectbox("Fasting Blood Sugar > 120 mg/dl", [True, False])
-    restecg = st.sidebar.selectbox("Resting ECG Results", ["normal", "st-t abnormality", "lv hypertrophy"])
-    exang = st.sidebar.selectbox("Exercise Induced Angina", [True, False])
-    slope = st.sidebar.selectbox("ST Slope Type", ["upsloping", "flat", "downsloping"])
-    thal = st.sidebar.selectbox("Thalassemia Status", ["normal", "fixed defect", "reversable defect"])
-
-    # Collect into a Dictionary (Must match original feature names exactly)
+    # Construct the feature dictionary
     data = {
-        'age': age, 'sex': sex, 'cp': cp, 'trestbps': trestbps, 'chol': chol,
-        'fbs': fbs, 'restecg': restecg, 'thalch': thalch, 'exang': exang,
-        'oldpeak': oldpeak, 'slope': slope, 'ca': ca, 'thal': thal
+        'age': age, 'sex': sex.lower(), 'cp': cp, 'trestbps': trestbps,
+        'chol': chol, 'fbs': fbs.lower() == 'true', 'restecg': restecg,
+        'thalch': thalch, 'exang': exang.lower() == 'yes',
+        'oldpeak': oldpeak, 'slope': slope, 'thal': thal
     }
     return pd.DataFrame([data])
 
 input_df = get_user_input()
 
-# --- 4. Prediction & Display ---
-st.subheader("Diagnostic Results")
+# 3. Sensitivity Selection (Threshold Moving)
+st.sidebar.markdown("---")
+st.sidebar.subheader("Safety Settings")
+# Lowering the threshold increases Recall (fewer missed cases)
+threshold = st.sidebar.slider('Sensitivity Threshold (Lower = Safer)', 0.1, 0.9, 0.5, 0.05)
 
-if st.button("Run Risk Assessment"):
-    # Make Prediction
-    prediction = model_pipeline.predict(input_df)[0]
-    probability = model_pipeline.predict_proba(input_df)[0][1]
+# 4. Main Panel Display
+col1, col2 = st.columns([1, 1])
 
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write(f"### Predicted Probability: **{probability:.2%}**")
+with col1:
+    st.subheader("Patient Profile Summary")
+    # Convert all values to strings to prevent Arrow conversion errors
+    # This ensures "male" and "50" can exist in the same display table
+    display_df = input_df.T.astype(str).rename(columns={0: 'Value'})
+    st.table(display_df) 
+
+with col2:
+    st.subheader("Prediction Analysis")
+    # Use a unique key for the button to avoid session state issues
+    if st.button("Run Diagnostic Prediction", key="predict_btn"):
+        # Get probabilities for the positive class (CAD)
+        prob = model.predict_proba(input_df)[:, 1][0]
+        
+        # Apply custom threshold for "Better safe than sorry" approach
+        # A person is classified as 1 (High Risk) if their probability >= threshold
+        prediction = 1 if prob >= threshold else 0
+        
         if prediction == 1:
-            st.error("Conclusion: HIGH RISK of Coronary Artery Disease")
+            st.error(f"### Result: HIGH RISK")
+            st.write(f"The model detected potential CAD indicators.")
         else:
-            st.success("Conclusion: LOW RISK / Healthy")
-
-    # --- 5. SHAP Explanation Logic ---
-    with col2:
-        st.write("### AI Diagnostic Rationale")
+            st.success(f"### Result: LOW RISK")
+            st.write(f"The patient appears to be in a low-risk category.")
+            
+        st.metric(label="CAD Probability Score", value=f"{prob:.2%}")
         
-        # Extract components from pipeline
-        rf_model = model_pipeline.named_steps['clf']
-        preprocessor = model_pipeline.named_steps['prep']
-        
-        # Transform the single input row
-        transformed_input = preprocessor.transform(input_df)
-        
-        # Get feature names from the preprocessor
-        cat_names = list(preprocessor.named_transformers_['cat'].get_feature_names_out())
-        num_names = ['age', 'trestbps', 'chol', 'thalch', 'oldpeak', 'ca']
-        feature_names = num_names + cat_names
+        # Display safety warning if the sensitivity is set high
+        if threshold < 0.5:
+            st.warning(f"Note: Sensitivity is currently set to {threshold}. "
+                       f"The model is biased towards detecting illness to minimize missing cases.")
 
-        # Calculate SHAP values
-        explainer = shap.TreeExplainer(rf_model)
-        shap_values = explainer.shap_values(transformed_input)
-        
-        # Handle binary classification output structure
-        if isinstance(shap_values, list):
-            sv = shap_values[1] # Class 1
-            bv = explainer.expected_value[1]
-        else:
-            sv = shap_values[:, :, 1] if len(shap_values.shape) == 3 else shap_values
-            bv = explainer.expected_value[1] if isinstance(explainer.expected_value, (list, np.ndarray)) else explainer.expected_value
-
-        # Create Explanation Object for Waterfall Plot
-        exp = shap.Explanation(
-            values=sv[0] if len(sv.shape) > 1 else sv,
-            base_values=bv,
-            data=transformed_input[0],
-            feature_names=feature_names
-        )
-
-        # Plot Waterfall
-        fig, ax = plt.subplots()
-        shap.plots.waterfall(exp, show=False)
-        st.pyplot(plt.gcf())
-
-st.markdown("---")
-st.caption("Disclaimer: This tool is for research purposes and should not replace professional medical advice.")
+# Footer with medical disclaimer
+st.info("**Disclaimer:** This is a research tool based on the UCI Heart Disease Dataset. "
+        "Results must be verified by a qualified cardiologist.")
