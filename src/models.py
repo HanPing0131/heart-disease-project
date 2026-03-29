@@ -11,8 +11,8 @@ def get_model_zoo():
     Returns a comprehensive dictionary of all requested classification models.
     """
     return {
-        'Logistic Regression': LogisticRegression(max_iter=1000), # [cite: 30, 54]
-        'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42), # [cite: 32, 55]
+        'Logistic Regression': LogisticRegression(max_iter=1000), 
+        'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42),
         'Decision Tree': DecisionTreeClassifier(random_state=42),
         'KNN': KNeighborsClassifier(n_neighbors=5),
         'Naive Bayes': GaussianNB(),

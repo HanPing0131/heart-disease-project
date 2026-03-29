@@ -6,7 +6,6 @@ def clean_data(df):
     Performs data cleaning: drops irrelevant columns and handles missing values.
     """
     # Drop columns with no predictive value based on the analysis report
-    df = df.drop(columns=['id', 'dataset', 'num'], errors='ignore')
     
     # Numeric imputation with median; Categorical with mode
     numeric_cols = df.select_dtypes(include=[np.number]).columns
